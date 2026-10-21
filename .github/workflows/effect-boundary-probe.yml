@@ -1,0 +1,121 @@
+
+name: Effect-boundary probe
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  probe:
+    if: startsWith(github.event.issue.title, '[EB-PROBE TARGET] ')
+    runs-on: ubuntu-latest
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      TARGET_NUMBER: ${{ github.event.issue.number }}
+      TARGET_TITLE: ${{ github.event.issue.title }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Run effect-boundary probe
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PREFIX='[EB-PROBE TARGET] '
+          EXPECTED_BODY='Controlled target for the effect-boundary probe. No production data.'
+
+          RUN_ID="${TARGET_TITLE#"$PREFIX"}"
+
+          if [[ ! "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,50}$ ]]; then
+            echo "Invalid run ID" >&2
+            exit 1
+          fi
+
+          SIDE_TITLE="[EB-PROBE SIDE-EFFECT] $RUN_ID"
+          SIDE_BODY="Controlled secondary issue for run $RUN_ID. Target issue: #$TARGET_NUMBER. Workflow: $RUN_URL"
+
+          get_matches() {
+            gh api --paginate "repos/$REPO/issues?state=all&per_page=100" |
+              jq -r --arg t "$1" '.[] | select(.title == $t) | .number'
+          }
+
+          BEFORE="$(get_matches "$SIDE_TITLE")"
+          if [[ -n "$BEFORE" ]]; then
+            echo "Run ID already exists; use a new ID." >&2
+            exit 1
+          fi
+
+          gh issue create \
+            --repo "$REPO" \
+            --title "$SIDE_TITLE" \
+            --body "$SIDE_BODY"
+
+          TARGET="$(gh api "repos/$REPO/issues/$TARGET_NUMBER")"
+
+          TITLE="$(jq -r '.title' <<< "$TARGET")"
+          BODY="$(jq -r '.body // ""' <<< "$TARGET")"
+          STATE="$(jq -r '.state' <<< "$TARGET")"
+
+          if [[ "$TITLE" == "$TARGET_TITLE" &&
+                "$BODY" == "$EXPECTED_BODY" &&
+                "$STATE" == "open" ]]; then
+            TARGET_RESULT="MATCH"
+          else
+            TARGET_RESULT="NONMATCH"
+          fi
+
+          SIDE_NUMBERS=""
+          for attempt in {1..10}; do
+            SIDE_NUMBERS="$(get_matches "$SIDE_TITLE")"
+            [[ -n "$SIDE_NUMBERS" ]] && break
+            sleep 2
+          done
+
+          COUNT="$(printf '%s\n' "$SIDE_NUMBERS" |
+            sed '/^$/d' | wc -l | tr -d '[:space:]')"
+
+          if [[ "$COUNT" == "1" ]]; then
+            INVENTORY_RESULT="DEVIATION_FOUND"
+            SIDE_NUMBER="$(printf '%s\n' "$SIDE_NUMBERS" | head -n 1)"
+          elif [[ "$COUNT" == "0" ]]; then
+            INVENTORY_RESULT="NOT_FOUND"
+            SIDE_NUMBER=""
+          else
+            INVENTORY_RESULT="AMBIGUOUS_DUPLICATES"
+            SIDE_NUMBER=""
+          fi
+
+          {
+            echo "## Effect-boundary probe"
+            echo
+            echo "- Run ID: $RUN_ID"
+            echo "- Target issue: #$TARGET_NUMBER"
+            echo "- Target-only observer: $TARGET_RESULT"
+            echo "- Repository inventory: $INVENTORY_RESULT"
+            if [[ -n "$SIDE_NUMBER" ]]; then
+              echo "- Secondary issue: #$SIDE_NUMBER"
+            fi
+            echo "- Workflow: $RUN_URL"
+            echo
+
+            if [[ "$TARGET_RESULT" == "MATCH" && "$COUNT" == "1" ]]; then
+              echo "**Probe verdict: PASS**"
+              echo
+              echo "The target matched while a separate issue existed."
+            else
+              echo "**Probe verdict: FAIL/INCONCLUSIVE**"
+            fi
+
+            echo
+            echo "> Scope: this checks GitHub issues only. It does not establish complete effect coverage, an independent observer, or research novelty."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$TARGET_RESULT" != "MATCH" || "$COUNT" != "1" ]]; then
+            exit 1
+          fi
+          
