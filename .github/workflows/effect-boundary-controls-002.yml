@@ -1,0 +1,151 @@
+name: Effect-boundary controls (Experiment 002)
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Choose one controlled scenario"
+        required: true
+        type: choice
+        options:
+          - normal
+          - extra-effect
+          - target-mismatch
+      run_id:
+        description: "Unique run ID (use a new ID every time)"
+        required: true
+        type: string
+
+permissions:
+  issues: write
+
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      SCENARIO: ${{ inputs.scenario }}
+      RUN_ID: ${{ inputs.run_id }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Run controlled experiment and classify observations
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,50}$ ]]; then
+            echo "Invalid run ID. Use 3-51 letters, numbers, dots, underscores, or hyphens; start with a letter or number." >&2
+            exit 1
+          fi
+
+          case "$SCENARIO" in
+            normal|extra-effect|target-mismatch) ;;
+            *) echo "Unsupported scenario" >&2; exit 1 ;;
+          esac
+
+          TARGET_TITLE="[EB002 TARGET] $RUN_ID"
+          SIDE_TITLE="[EB002 SIDE-EFFECT] $RUN_ID"
+          EXPECTED_BODY="Controlled target for Experiment 002. No production data. Run ID: $RUN_ID"
+          MISMATCH_BODY="Deliberately modified target body for Experiment 002. Run ID: $RUN_ID"
+          SIDE_BODY="Deliberately injected secondary issue for Experiment 002. Run ID: $RUN_ID. Target issue will be recorded in this workflow summary."
+
+          get_issue_numbers() {
+            local title="$1"
+            gh api --paginate "repos/$REPO/issues?state=all&per_page=100" |
+              jq -r --arg wanted "$title" '.[] | select(.title == $wanted) | .number'
+          }
+
+          # Refuse to reuse IDs, which makes results ambiguous.
+          if [[ -n "$(get_issue_numbers "$TARGET_TITLE")" || -n "$(get_issue_numbers "$SIDE_TITLE")" ]]; then
+            echo "This run ID already exists. Choose a fresh run ID." >&2
+            exit 1
+          fi
+
+          # Create the declared target effect.
+          TARGET_JSON="$(gh api --method POST "repos/$REPO/issues" -f title="$TARGET_TITLE" -f body="$EXPECTED_BODY")"
+          TARGET_NUMBER="$(jq -r '.number' <<< "$TARGET_JSON")"
+
+          # Inject a deliberately distinct effect only in the extra-effect scenario.
+          if [[ "$SCENARIO" == "extra-effect" ]]; then
+            SIDE_BODY="Deliberately injected secondary issue for Experiment 002. Run ID: $RUN_ID. Target issue: #$TARGET_NUMBER. Workflow: $RUN_URL"
+            gh api --method POST "repos/$REPO/issues" -f title="$SIDE_TITLE" -f body="$SIDE_BODY" >/dev/null
+          fi
+
+          # Introduce a target-field mismatch only in that scenario.
+          if [[ "$SCENARIO" == "target-mismatch" ]]; then
+            gh api --method PATCH "repos/$REPO/issues/$TARGET_NUMBER" -f body="$MISMATCH_BODY" >/dev/null
+          fi
+
+          # Observer A: read the target back and compare its declared fields.
+          TARGET_JSON="$(gh api "repos/$REPO/issues/$TARGET_NUMBER")"
+          ACTUAL_TITLE="$(jq -r '.title' <<< "$TARGET_JSON")"
+          ACTUAL_BODY="$(jq -r '.body // ""' <<< "$TARGET_JSON")"
+          ACTUAL_STATE="$(jq -r '.state' <<< "$TARGET_JSON")"
+
+          if [[ "$ACTUAL_TITLE" == "$TARGET_TITLE" &&
+                "$ACTUAL_BODY" == "$EXPECTED_BODY" &&
+                "$ACTUAL_STATE" == "open" ]]; then
+            TARGET_RESULT="MATCH"
+          else
+            TARGET_RESULT="NONMATCH"
+          fi
+
+          # Observer B: inventory GitHub issues for this run's designated side-effect marker.
+          SIDE_NUMBERS="$(get_issue_numbers "$SIDE_TITLE")"
+          if [[ -z "$SIDE_NUMBERS" ]]; then
+            SIDE_COUNT=0
+          else
+            SIDE_COUNT="$(printf '%s\n' "$SIDE_NUMBERS" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+          fi
+
+          if [[ "$SIDE_COUNT" == "0" ]]; then
+            INVENTORY_RESULT="NO_MARKED_EXTRA_EFFECT_FOUND"
+          elif [[ "$SIDE_COUNT" == "1" ]]; then
+            INVENTORY_RESULT="DEVIATION_FOUND"
+          else
+            INVENTORY_RESULT="AMBIGUOUS_DUPLICATES"
+          fi
+
+          # Evaluate each scenario against its predeclared expected observations.
+          case "$SCENARIO" in
+            normal)
+              EXPECTED_TARGET="MATCH"
+              EXPECTED_SIDE_COUNT=0
+              ;;
+            extra-effect)
+              EXPECTED_TARGET="MATCH"
+              EXPECTED_SIDE_COUNT=1
+              ;;
+            target-mismatch)
+              EXPECTED_TARGET="NONMATCH"
+              EXPECTED_SIDE_COUNT=0
+              ;;
+          esac
+
+          if [[ "$TARGET_RESULT" == "$EXPECTED_TARGET" && "$SIDE_COUNT" == "$EXPECTED_SIDE_COUNT" ]]; then
+            VERDICT="PASS"
+          else
+            VERDICT="FAIL"
+          fi
+
+          {
+            echo "## Experiment 002: controlled effect-boundary checks"
+            echo
+            echo "- Scenario: $SCENARIO"
+            echo "- Run ID: $RUN_ID"
+            echo "- Target issue: #$TARGET_NUMBER"
+            echo "- Target-only observer: $TARGET_RESULT (expected $EXPECTED_TARGET)"
+            echo "- Marked side-effect inventory: $INVENTORY_RESULT"
+            echo "- Count of matching side-effect issues: $SIDE_COUNT (expected $EXPECTED_SIDE_COUNT)"
+            echo "- Workflow: $RUN_URL"
+            echo
+            echo "### Scope and limitation"
+            echo "The side-effect check searches for this experiment's exact marker title in the same GitHub repository. It is not a complete inventory of all possible side effects and is not an independent trust domain."
+            echo
+            echo "**Verdict: $VERDICT**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$VERDICT" != "PASS" ]]; then
+            exit 1
+          fi
