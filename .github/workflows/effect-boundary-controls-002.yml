@@ -92,7 +92,14 @@ jobs:
           fi
 
           # Observer B: inventory GitHub issues for this run's designated side-effect marker.
-          SIDE_NUMBERS="$(get_issue_numbers "$SIDE_TITLE")"
+          SIDE_NUMBERS=""
+          for attempt in {1..10}; do
+            SIDE_NUMBERS="$(get_issue_numbers "$SIDE_TITLE")"
+            if [[ -n "$SIDE_NUMBERS" ]]; then
+              break
+            fi
+            sleep 2
+          done
           if [[ -z "$SIDE_NUMBERS" ]]; then
             SIDE_COUNT=0
           else
