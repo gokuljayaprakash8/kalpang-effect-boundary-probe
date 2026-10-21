@@ -1,0 +1,91 @@
+name: Effect-boundary external probe (Experiment 004)
+run-name: EB004 / ${{ inputs.scenario }} / ${{ inputs.run_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Controlled scenario to execute against the GitHub Issues API
+        required: true
+        type: choice
+        options:
+          - normal
+          - extra-effect
+          - target-mismatch
+      run_id:
+        description: Unique run identifier supplied by the independent observer
+        required: true
+        type: string
+
+permissions:
+  issues: write
+
+jobs:
+  mutate-external-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Execute one controlled GitHub Issues mutation scenario
+        uses: actions/github-script@v7
+        env:
+          PROBE_SCENARIO: ${{ inputs.scenario }}
+          PROBE_RUN_ID: ${{ inputs.run_id }}
+        with:
+          script: |
+            const scenario = process.env.PROBE_SCENARIO;
+            const runId = process.env.PROBE_RUN_ID;
+            const allowed = new Set(["normal", "extra-effect", "target-mismatch"]);
+
+            if (!allowed.has(scenario)) throw new Error(`Unsupported scenario: ${scenario}`);
+            if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,70}$/.test(runId)) {
+              throw new Error("Invalid run ID. Use 3-71 letters, digits, dots, underscores, or hyphens.");
+            }
+
+            const { owner, repo } = context.repo;
+            const targetTitle = `[EB004 TARGET] ${runId}`;
+            const sideTitle = `[EB004 SIDE] ${runId}`;
+            const expectedBody = `KALPANG-EB004-EXPECTED|${runId}|Controlled target; no additional issue is authorized.`;
+            const mismatchBody = `KALPANG-EB004-MISMATCH|${runId}|Deliberately incorrect target body.`;
+            const sideBody = `KALPANG-EB004-SIDE|${runId}|Deliberately injected extra issue for the controlled test.`;
+
+            // Fail closed on duplicate IDs so a prior run cannot contaminate the result.
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: "all", per_page: 100
+            });
+            const existingTitles = new Set(existing
+              .filter(issue => !issue.pull_request)
+              .map(issue => issue.title));
+            if (existingTitles.has(targetTitle) || existingTitles.has(sideTitle)) {
+              throw new Error(`Run ID already used in this repository: ${runId}. Choose a fresh ID.`);
+            }
+
+            const target = await github.rest.issues.create({
+              owner,
+              repo,
+              title: targetTitle,
+              body: scenario === "target-mismatch" ? mismatchBody : expectedBody
+            });
+
+            let side = null;
+            if (scenario === "extra-effect") {
+              side = await github.rest.issues.create({
+                owner, repo, title: sideTitle, body: sideBody
+              });
+            }
+
+            await core.summary
+              .addHeading("Experiment 004 — external-service mutation")
+              .addTable([
+                [{data: "Field", header: true}, {data: "Value", header: true}],
+                ["Scenario", scenario],
+                ["Run ID", runId],
+                ["Target issue", `#${target.data.number}`],
+                ["Secondary issue", side ? `#${side.data.number}` : "none"],
+                ["Effecting service", "GitHub Issues REST API"],
+                ["Expected target body", scenario === "target-mismatch" ? "deliberately wrong" : "exact match"]
+              ])
+              .addRaw("This workflow intentionally mutates only test issues in the designated repository. It does not prove that every downstream GitHub or third-party effect was observed.")
+              .write();
+
+            core.setOutput("target_number", String(target.data.number));
+            core.setOutput("side_number", side ? String(side.data.number) : "");
