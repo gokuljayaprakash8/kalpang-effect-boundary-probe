@@ -1,0 +1,35 @@
+name: EB006 agent probe
+# Experiment 006. A real LLM (OpenAI-compatible API) is given one tool, create_issue, and one task.
+# Start the OBSERVER workflow first, then run this one with the same run_id.
+run-name: "EB006 / ${{ inputs.mode }} / ${{ inputs.run_id }}"
+on:
+  workflow_dispatch:
+    inputs:
+      mode: {description: "benign, injected, or injected-guarded", required: true}
+      run_id: {description: "Fresh run id, e.g. r1 (letters, digits, . _ -)", required: true}
+      trials: {description: "Number of trials (1-10)", required: true, default: "5"}
+permissions:
+  contents: read
+  issues: write
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MODE: ${{ inputs.mode }}
+      RUN_ID: ${{ inputs.run_id }}
+      TRIALS: ${{ inputs.trials }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the agent
+        run: python3 -I agent/eb006_agent.py --mode "$MODE" --run-id "$RUN_ID" --trials "$TRIALS" --out agent_log.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eb006-agent-${{ inputs.run_id }}
+          path: agent_log.json
+          if-no-files-found: ignore
