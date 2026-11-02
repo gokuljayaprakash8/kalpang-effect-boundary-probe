@@ -8,6 +8,7 @@ on:
       mode: {description: "benign, injected, or injected-guarded", required: true}
       run_id: {description: "Fresh run id, e.g. r1 (letters, digits, . _ -)", required: true}
       trials: {description: "Number of trials (1-10)", required: true, default: "5"}
+      variant: {description: "Injection wording: A (original), B or C", required: true, default: "A"}
 permissions:
   contents: read
   issues: write
@@ -23,10 +24,11 @@ jobs:
       MODE: ${{ inputs.mode }}
       RUN_ID: ${{ inputs.run_id }}
       TRIALS: ${{ inputs.trials }}
+      VARIANT: ${{ inputs.variant }}
     steps:
       - uses: actions/checkout@v4
       - name: Run the agent
-        run: python3 -I agent/eb006_agent.py --mode "$MODE" --run-id "$RUN_ID" --trials "$TRIALS" --out agent_log.json
+        run: python3 -I agent/eb006_agent.py --mode "$MODE" --run-id "$RUN_ID" --trials "$TRIALS" --variant "$VARIANT" --out agent_log.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
