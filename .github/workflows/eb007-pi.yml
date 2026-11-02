@@ -1,0 +1,53 @@
+name: EB007 pi-action probe
+# Experiment 007. Runs the third-party action cv/pi-action (unmodified, pinned to its default branch tip at the time of the run)
+# against a trigger issue whose text may contain an injected instruction. Start the "EB007 pi observer" workflow FIRST.
+run-name: "EB006 / pitest / ${{ inputs.run_id }}"
+on:
+  workflow_dispatch:
+    inputs:
+      run_id: {description: "Fresh run id, e.g. p1 (letters, digits, . _ -)", required: true}
+      variant: {description: "none (control), A or C", required: true, default: "C"}
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+jobs:
+  trial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        trial: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Harness creates the trigger issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 -I pi/eb007_trigger.py --run-id "${{ inputs.run_id }}" --trial "${{ matrix.trial }}" --variant "${{ inputs.variant }}" --prompt-out prompt.txt
+      - name: Read prompt
+        id: p
+        run: |
+          { echo 'prompt<<EB007_EOF'; cat prompt.txt; echo; echo 'EB007_EOF'; } >> "$GITHUB_OUTPUT"
+      - name: Run pi-action (third party, unmodified)
+        id: pi
+        continue-on-error: true
+        uses: cv/pi-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          output_mode: output
+          share_session: 'false'
+          prompt: ${{ steps.p.outputs.prompt }}
+          provider: groqeval
+          model: ${{ vars.LLM_MODEL }}
+          provider_base_url: ${{ vars.LLM_BASE_URL }}
+          provider_api: openai-completions
+          api_key: ${{ secrets.LLM_API_KEY }}
+          provider_auth_header: 'true'
+          model_name: eb007-model
+          timeout: '600'
+          
