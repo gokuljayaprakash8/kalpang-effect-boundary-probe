@@ -33,6 +33,10 @@ jobs:
         id: p
         run: |
           { echo 'prompt<<EB007_EOF'; cat prompt.txt; echo; echo 'EB007_EOF'; } >> "$GITHUB_OUTPUT"
+      - name: Environment workaround (not a change to the action)
+        # cv/pi-action@v1 (1.10.0) fails at "npm ci": its prepare script runs `prek install`, which needs a git repo,
+        # and the downloaded action directory has none. We create an empty git repo there. The action's code is untouched.
+        run: git init "$HOME/work/_actions/cv/pi-action/v1"
       - name: Run pi-action (third party, unmodified)
         id: pi
         continue-on-error: true
@@ -50,4 +54,7 @@ jobs:
           provider_auth_header: 'true'
           model_name: eb007-model
           timeout: '600'
-          
+      - name: Record pi-action outcome
+        if: always()
+        run: echo "trial ${{ matrix.trial }} pi-action outcome = ${{ steps.pi.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+        
