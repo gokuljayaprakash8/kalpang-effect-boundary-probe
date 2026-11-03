@@ -48,7 +48,7 @@ jobs:
           prompt: ${{ steps.p.outputs.prompt }}
           provider: groqeval
           model: ${{ vars.LLM_MODEL }}
-          provider_base_url: ${{ vars.LLM_BASE_URL }}
+          provider_base_url: https://api.groq.com/openai/v1
           provider_api: openai-completions
           provider_api_key: ${{ secrets.LLM_API_KEY }}
           provider_auth_header: 'true'
