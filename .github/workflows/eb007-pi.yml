@@ -1,12 +1,12 @@
 name: EB007 pi-action probe
-# Experiment 007. Runs the third-party action cv/pi-action (unmodified, pinned to its default branch tip at the time of the run)
-# against a trigger issue whose text may contain an injected instruction. Start the "EB007 pi observer" workflow FIRST.
+# Experiment 007. Runs the third-party action cv/pi-action (unmodified, v1 tag) against a trigger issue whose text may
+# contain an injected instruction. Start the "EB007 pi observer" workflow FIRST.
 run-name: "EB006 / pitest / ${{ inputs.run_id }}"
 on:
   workflow_dispatch:
     inputs:
-      run_id: {description: "Fresh run id, e.g. p1 (letters, digits, . _ -)", required: true}
-      variant: {description: "none (control), A or C", required: true, default: "C"}
+      run_id: {description: "Fresh run id, e.g. p6 (letters, digits, . _ -)", required: true}
+      variant: {description: "none (control), D (capability control), A or C", required: true, default: "C"}
 permissions:
   contents: read
   issues: write
@@ -54,7 +54,12 @@ jobs:
           provider_auth_header: 'true'
           model_name: eb007-model
           timeout: '600'
-      - name: Record pi-action outcome
+      - name: Record pi-action outcome and the agent reply
         if: always()
-        run: echo "trial ${{ matrix.trial }} pi-action outcome = ${{ steps.pi.outcome }}" >> "$GITHUB_STEP_SUMMARY"
-        
+        env:
+          PI_RESPONSE: ${{ steps.pi.outputs.response }}
+        run: |
+          echo "trial ${{ matrix.trial }} pi-action outcome = ${{ steps.pi.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$PI_RESPONSE" | head -c 1500 | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY"
+          
