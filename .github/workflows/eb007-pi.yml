@@ -50,7 +50,7 @@ jobs:
           model: ${{ vars.LLM_MODEL }}
           provider_base_url: ${{ vars.LLM_BASE_URL }}
           provider_api: openai-completions
-          api_key: ${{ secrets.LLM_API_KEY }}
+          provider_api_key: ${{ secrets.LLM_API_KEY }}
           provider_auth_header: 'true'
           model_name: eb007-model
           timeout: '600'
