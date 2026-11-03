@@ -53,6 +53,8 @@ jobs:
           provider_api_key: ${{ secrets.LLM_API_KEY }}
           provider_auth_header: 'true'
           model_name: eb007-model
+          compat_supports_developer_role: 'false'
+          compat_supports_reasoning_effort: 'false'
           timeout: '600'
       - name: Record pi-action outcome and the agent reply
         if: always()
