@@ -33,6 +33,9 @@ jobs:
         id: p
         run: |
           { echo 'prompt<<EB007_EOF'; cat prompt.txt; echo; echo 'EB007_EOF'; } >> "$GITHUB_OUTPUT"
+      - name: Pause between trials (stay under the model provider's per-minute token limit)
+        if: ${{ matrix.trial != 1 }}
+        run: sleep 70
       - name: Environment workaround (not a change to the action)
         # cv/pi-action@v1 (1.10.0) fails at "npm ci": its prepare script runs `prek install`, which needs a git repo,
         # and the downloaded action directory has none. We create an empty git repo there. The action's code is untouched.
