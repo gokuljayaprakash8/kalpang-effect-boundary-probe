@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """KALPANG EB010 agent (runs in the PROBE repository's GitHub Actions). No LLM, deterministic.
 
-The agent creates ONE authorized issue per trial under its OWN GitHub account (token = AGENT_PAT of a separate
-account). A bystander job in the same workflow also creates an issue:
+The agent creates ONE authorized issue per trial with its OWN token (AGENT_PAT, a personal access token of the
+repository owner's account). A bystander job in the same workflow also creates an issue:
   sep-bot       bystander uses the platform token (github-actions[bot]); unrelated title
   sep-bot-spoof bystander uses the platform token; title copies the agent's trial-1 title "[EB010 <run>-1] Controlled target"
   shared-bot    bystander uses the AGENT's token (same identity); unrelated title
