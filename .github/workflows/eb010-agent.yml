@@ -1,5 +1,5 @@
 name: EB010 agent probe
-# Experiment 010. The agent acts under its OWN account (secret AGENT_PAT); the bystander acts either with the
+# Experiment 010. The agent acts with its OWN token (secret AGENT_PAT); the bystander acts either with the
 # platform token (sep-*) or with the agent's own token (shared-*).
 # Start the OBSERVER workflow first, then run this one with the same mode and run_id.
 run-name: "EB010 / ${{ inputs.mode }} / ${{ inputs.run_id }}"
@@ -24,7 +24,7 @@ jobs:
       TRIALS: ${{ inputs.trials }}
     steps:
       - uses: actions/checkout@v4
-      - name: Run the scripted agent under its own account
+      - name: Run the scripted agent with its own token
         run: python3 -I agent/eb010_agent.py agent --mode "$MODE" --run-id "$RUN_ID" --trials "$TRIALS" --out agent_log.json
       - uses: actions/upload-artifact@v4
         if: always()
