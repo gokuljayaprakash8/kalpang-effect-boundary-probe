@@ -1,0 +1,22 @@
+name: EB011 setup
+# Run ONCE per suffix, before any EB011 run. Creates a target and a protected issue for each mode (14 issues).
+on:
+  workflow_dispatch:
+    inputs:
+      suffix: {description: "Fresh suffix, e.g. r1", required: true}
+permissions:
+  contents: read
+  issues: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GITHUB_TOKEN: ${{ secrets.AGENT_PAT }}
+      SUFFIX: ${{ inputs.suffix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -I agent/eb011_agent.py setup --suffix "$SUFFIX" --out setup.json
+      - uses: actions/upload-artifact@v4
+        with: {name: "eb011-setup-${{ inputs.suffix }}", path: setup.json}
+
