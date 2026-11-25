@@ -1,0 +1,18 @@
+name: EB013 key check
+# Diagnostic only. Prints whether ISSUER_PUBLIC_KEY matches the public key derived from ISSUER_PRIVATE_KEY. Never prints the private key.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ISSUER_PRIVATE_KEY: ${{ secrets.ISSUER_PRIVATE_KEY }}
+      ISSUER_PUBLIC_KEY: ${{ vars.ISSUER_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography
+      - run: python3 -I agent/eb013_keycheck.py
+
