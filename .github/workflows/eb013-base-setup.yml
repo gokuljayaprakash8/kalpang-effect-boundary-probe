@@ -1,0 +1,22 @@
+name: EB013 baseline setup
+# Run ONCE per suffix before the baseline run. Creates the target and protected issues for base-forge-with-gate-key.
+on:
+  workflow_dispatch:
+    inputs:
+      suffix: {description: "Fresh suffix for the baseline, e.g. b1", required: true}
+permissions:
+  contents: read
+  issues: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GITHUB_TOKEN: ${{ secrets.AGENT_PAT }}
+      GATE_KEY: ${{ secrets.GATE_KEY }}
+      SUFFIX: ${{ inputs.suffix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography
+      - run: python3 -I agent/eb013_base.py setup --suffix "$SUFFIX" --out setup.json
+
