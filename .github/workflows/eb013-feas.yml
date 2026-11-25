@@ -1,0 +1,9 @@
+name: EB013 C2 feasibility
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  call:
+    uses: gokuljayaprakash8/kalpang-gate-private/.github/workflows/feasibility.yml@main
+    
