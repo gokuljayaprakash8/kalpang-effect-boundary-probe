@@ -1,0 +1,67 @@
+name: EB013 C1 run
+# Start the OBSERVER workflow first (same mode and suffix), wait about 1 minute, then run this one. Run id = <mode>-<suffix>.
+run-name: "EB013 / ${{ inputs.mode }} / ${{ inputs.mode }}-${{ inputs.suffix }}"
+on:
+  workflow_dispatch:
+    inputs:
+      mode: {description: "s-faithful or s-forge-with-public-key", required: true}
+      suffix: {description: "Same suffix as the setup run, e.g. c1", required: true}
+permissions:
+  contents: read
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {contents: read, issues: read}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUER_PRIVATE_KEY: ${{ secrets.ISSUER_PRIVATE_KEY }}
+      MODE: ${{ inputs.mode }}
+      SUFFIX: ${{ inputs.suffix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography
+      - run: python3 -I agent/eb013_c1.py authorize --mode "$MODE" --suffix "$SUFFIX" --out auth.json
+      - uses: actions/upload-artifact@v4
+        with: {name: "auth-${{ inputs.mode }}-${{ inputs.suffix }}", path: auth.json}
+  handler:
+    needs: authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {contents: read, issues: read}
+    env:
+      # UNTRUSTED handler: knows the PUBLIC key, no private key, read-only platform token.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUER_PUBLIC_KEY: ${{ vars.ISSUER_PUBLIC_KEY }}
+      MODE: ${{ inputs.mode }}
+      SUFFIX: ${{ inputs.suffix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography
+      - uses: actions/download-artifact@v4
+        with: {name: "auth-${{ inputs.mode }}-${{ inputs.suffix }}"}
+      - run: python3 -I agent/eb013_c1.py handler --mode "$MODE" --suffix "$SUFFIX" --auth auth.json --out request.json
+      - uses: actions/upload-artifact@v4
+        with: {name: "request-${{ inputs.mode }}-${{ inputs.suffix }}", path: request.json}
+  gate:
+    needs: handler
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ secrets.AGENT_PAT }}
+      ISSUER_PUBLIC_KEY: ${{ vars.ISSUER_PUBLIC_KEY }}
+      MODE: ${{ inputs.mode }}
+      SUFFIX: ${{ inputs.suffix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography
+      - uses: actions/download-artifact@v4
+        with: {name: "auth-${{ inputs.mode }}-${{ inputs.suffix }}"}
+      - uses: actions/download-artifact@v4
+        with: {name: "request-${{ inputs.mode }}-${{ inputs.suffix }}"}
+      - name: Gate
+        run: python3 -I agent/eb013_c1.py gate --mode "$MODE" --suffix "$SUFFIX" --auth auth.json --request request.json --out gate_log.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "gate-log-${{ inputs.mode }}-${{ inputs.suffix }}", path: gate_log.json, if-no-files-found: ignore}
+
