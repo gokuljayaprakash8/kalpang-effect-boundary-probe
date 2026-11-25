@@ -1,0 +1,66 @@
+name: EB013 baseline run
+# Start the OBSERVER workflow first (mode base-forge-with-gate-key, same suffix), wait about 1 minute, then run this one.
+run-name: "EB013 / base-forge-with-gate-key / base-forge-with-gate-key-${{ inputs.suffix }}"
+on:
+  workflow_dispatch:
+    inputs:
+      suffix: {description: "Same suffix as the baseline setup run, e.g. b1", required: true}
+permissions:
+  contents: read
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {contents: read, issues: read}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GATE_KEY: ${{ secrets.GATE_KEY }}
+      MODE: base-forge-with-gate-key
+      SUFFIX: ${{ inputs.suffix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography
+      - run: python3 -I agent/eb013_base.py authorize --mode "$MODE" --suffix "$SUFFIX" --out auth.json
+      - uses: actions/upload-artifact@v4
+        with: {name: "auth-base-${{ inputs.suffix }}", path: auth.json}
+  handler:
+    needs: authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {contents: read, issues: read}
+    env:
+      # UNTRUSTED handler. In THIS baseline it holds GATE_KEY: it models a leak or compromise of the gate's key.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GATE_KEY: ${{ secrets.GATE_KEY }}
+      MODE: base-forge-with-gate-key
+      SUFFIX: ${{ inputs.suffix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography
+      - uses: actions/download-artifact@v4
+        with: {name: "auth-base-${{ inputs.suffix }}"}
+      - run: python3 -I agent/eb013_base.py handler --mode "$MODE" --suffix "$SUFFIX" --auth auth.json --out request.json
+      - uses: actions/upload-artifact@v4
+        with: {name: "request-base-${{ inputs.suffix }}", path: request.json}
+  gate:
+    needs: handler
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ secrets.AGENT_PAT }}
+      GATE_KEY: ${{ secrets.GATE_KEY }}
+      MODE: base-forge-with-gate-key
+      SUFFIX: ${{ inputs.suffix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography
+      - uses: actions/download-artifact@v4
+        with: {name: "auth-base-${{ inputs.suffix }}"}
+      - uses: actions/download-artifact@v4
+        with: {name: "request-base-${{ inputs.suffix }}"}
+      - name: Gate
+        run: python3 -I agent/eb013_base.py gate --mode "$MODE" --suffix "$SUFFIX" --auth auth.json --request request.json --out gate_log.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "gate-log-base-${{ inputs.suffix }}", path: gate_log.json, if-no-files-found: ignore}
+
